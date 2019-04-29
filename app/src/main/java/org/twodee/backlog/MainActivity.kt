@@ -10,12 +10,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.preference.PreferenceManager
-import android.provider.MediaStore
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.widget.*
-import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.twodee.rattler.PermittedActivity
@@ -194,81 +192,36 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
     builder.show()
   }
 
-  // Chunk 0
+  // Exercise 1
   private fun loadDayPhotos() {
-    if (photoDirectory.exists()) {
-      val photos = photoDirectory
-        .listFiles { file, _ -> file.isDirectory }
-        .map { Photo(File(it, String.format("%02d_%02d.jpg", month, day))) }
-        .filter { it.file.exists() }
-
-      photosList.adapter = PhotoAdapter(photos)
-    }
   }
 
-  // Chunk 1
+  // Exercise 2
   private fun dayFile(year: Int, month: Int, day: Int): File {
-    val file = File(photoDirectory, String.format("$year/%02d_%02d.jpg", month, day))
-    file.parentFile.mkdirs()
-    return file
+    TODO()
   }
 
-  // Chunk 2 - FileProvider XML
+  // Exercise 3 - FileProvider XML
 
-  // Chunk 3
+  // Exercise 4
   private fun dayUri(year: Int, month: Int, day: Int): Uri {
-    val file = dayFile(year, month, day)
-    val uri = FileProvider.getUriForFile(this, "org.twodee.backlog.fileprovider", file)
-    return uri
+    TODO()
   }
 
-  // Chunk 4
+  // Exercise 5
   private fun takePictureFromCamera() {
-    val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-    intent.resolveActivity(packageManager)?.let {
-      val uri = dayUri(year, month, day)
-      intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
-      startActivityForResult(intent, REQUEST_CAMERA)
-    }
   }
 
-  // Chunk 5
+  // Exercise 6
   private fun takePictureFromGallery() {
-    val intent = Intent(Intent.ACTION_GET_CONTENT)
-    intent.addCategory(Intent.CATEGORY_OPENABLE)
-    intent.type = "image/*"
-    startActivityForResult(intent, REQUEST_GALLERY)
   }
 
-  // Chunk 6
+  // Exercise 7
   private fun copyUriToUri(from: Uri, to: Uri) {
-    contentResolver.openInputStream(from).use { input ->
-      contentResolver.openOutputStream(to).use { output ->
-        input.copyTo(output)
-      }
-    }
   }
 
-  // Chunk 7
+  // Exercise 8
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-    when (requestCode) {
-      REQUEST_CAMERA -> {
-        if (resultCode == Activity.RESULT_OK) {
-          loadDayPhotos()
-        }
-      }
-      REQUEST_GALLERY -> {
-        if (resultCode == Activity.RESULT_OK) {
-          data?.data?.let { uri ->
-            copyUriToUri(uri, dayUri(year, month, day))
-            loadDayPhotos()
-          }
-        }
-      }
-      else -> {
-        super.onActivityResult(requestCode, resultCode, data)
-      }
-    }
   }
 
   private fun setReminderTime() {
