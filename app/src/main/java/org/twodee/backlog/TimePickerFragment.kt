@@ -3,7 +3,7 @@ package org.twodee.backlog
 import android.app.Dialog
 import android.app.TimePickerDialog
 import android.os.Bundle
-import android.support.v4.app.DialogFragment
+import androidx.fragment.app.DialogFragment
 
 class TimePickerFragment : DialogFragment() {
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {

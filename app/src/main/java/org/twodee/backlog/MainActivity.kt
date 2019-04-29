@@ -3,36 +3,149 @@ package org.twodee.backlog
 import android.app.*
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.preference.PreferenceManager
-import android.support.v7.app.AppCompatActivity
+import android.provider.MediaStore
 import android.view.Menu
 import android.view.MenuItem
-import android.widget.TimePicker
+import android.view.View
+import android.widget.*
+import androidx.core.content.FileProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import org.twodee.rattler.PermittedActivity
+import java.io.File
+import java.util.*
 
-class MainActivity : AppCompatActivity(), TimePickerDialog.OnTimeSetListener {
+private const val REQUEST_CAMERA = 110
+private const val REQUEST_GALLERY = 111
+
+class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
   private lateinit var prefs: SharedPreferences
+  private lateinit var photosList: RecyclerView
+  private lateinit var monthSpinner: Spinner
+  private lateinit var daySpinner: Spinner
+
+  private val year
+    get() = Calendar.getInstance().get(Calendar.YEAR)
+
+  private val month
+    get() = monthSpinner.selectedItemPosition + 1
+
+  private val day
+    get() = daySpinner.selectedItemPosition + 1
+
+  private val photoDirectory
+    get() = File(Environment.getExternalStorageDirectory(), "backlog")
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     setContentView(R.layout.activity_main)
     createNotificationChannel()
-
     prefs = PreferenceManager.getDefaultSharedPreferences(this)
-    val hour = prefs.getInt("hour", -1)
-    if (hour < 0) {
-      val builder = AlertDialog.Builder(this)
-      builder.setTitle("Set Reminder")
-      builder.setMessage("Backlog won't send daily reminders until you schedule a time.")
-      builder.setPositiveButton("Schedule") { _, _ ->
-        setReminderTime()
+
+    // Set up UI.
+    photosList = findViewById(R.id.photosList)
+    monthSpinner = findViewById(R.id.monthSpinner)
+    daySpinner = findViewById(R.id.daySpinner)
+    val leftButton: ImageButton = findViewById(R.id.leftButton)
+    val rightButton: ImageButton = findViewById(R.id.rightButton)
+
+    photosList.layoutManager = LinearLayoutManager(this)
+    leftButton.setOnClickListener { previousDay() }
+    rightButton.setOnClickListener { nextDay() }
+
+    monthSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, resources.getStringArray(R.array.months))
+
+    // I need to disable animations on the spinner.
+    val today = Calendar.getInstance()
+    monthSpinner.setSelection(today.get(Calendar.MONTH), false)
+    syncDays()
+    daySpinner.setSelection(today.get(Calendar.DAY_OF_MONTH) - 1, false)
+    loadDayPhotos()
+
+    // Register callbacks.
+    monthSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+      override fun onNothingSelected(p0: AdapterView<*>?) {}
+      override fun onItemSelected(adapter: AdapterView<*>?, view: View?, i: Int, id: Long) {
+        syncDays()
       }
-      builder.setNegativeButton("Cancel") { dialog, _ ->
-        dialog.cancel()
+    }
+
+    daySpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+      override fun onNothingSelected(p0: AdapterView<*>?) {}
+      override fun onItemSelected(p0: AdapterView<*>?, p1: View?, p2: Int, p3: Long) {
+        loadDayPhotos()
       }
-      builder.show()
+    }
+
+    // Fire prompts.
+    val permissions = arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    requestPermissions(permissions, 100, {
+      promptForTodo()
+    }, {
+      Toast.makeText(this, "Unable to store photos.", Toast.LENGTH_LONG).show()
+    })
+  }
+
+  private fun daysInMonth(month: Int) = when (month) {
+    1, 3, 5, 7, 8, 10, 12 -> 31
+    2 -> 29
+    else -> 30
+  }
+
+  private fun previousDay() {
+    if (day == 1) {
+      monthSpinner.setSelection((month - 2 + 12) % 12, false)
+      syncDays()
+      daySpinner.setSelection(daysInMonth(month) - 1)
+    } else {
+      daySpinner.setSelection(day - 2, false)
+    }
+  }
+
+  private fun nextDay() {
+    if (day == daysInMonth(month)) {
+      monthSpinner.setSelection((month + 12) % 12, false)
+      syncDays()
+      daySpinner.setSelection(0)
+    } else {
+      daySpinner.setSelection(day, false)
+    }
+  }
+
+  private fun syncDays() {
+    val nDays = daysInMonth(month)
+    if (daySpinner.adapter != null && nDays == daySpinner.adapter.count) {
+      return
+    }
+
+    val days = (1..nDays).map { it.toString() }
+    daySpinner.adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, days.toTypedArray())
+  }
+
+  private fun promptForTodo() {
+    if (intent.getBooleanExtra("isAdd", false)) {
+      promptForAdd()
+    } else {
+      val hour = prefs.getInt("hour", -1)
+      if (hour < 0) {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle("Set Reminder")
+        builder.setMessage("Backlog won't send daily reminders until you schedule a time.")
+        builder.setPositiveButton("Schedule") { _, _ ->
+          setReminderTime()
+        }
+        builder.setNegativeButton("Cancel") { dialog, _ ->
+          dialog.cancel()
+        }
+        builder.show()
+      }
     }
   }
 
@@ -58,8 +171,103 @@ class MainActivity : AppCompatActivity(), TimePickerDialog.OnTimeSetListener {
       packageManager.setComponentEnabledSetting(receiver, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
       true
     }
+    R.id.addButton -> {
+      promptForAdd()
+      true
+    }
     else -> {
       super.onOptionsItemSelected(item)
+    }
+  }
+
+  private fun promptForAdd() {
+    val builder = AlertDialog.Builder(this).apply {
+      setTitle("Choose source")
+      setMessage("Where is the photo?")
+      setPositiveButton("Camera") { _, _ ->
+        takePictureFromCamera()
+      }
+      setNegativeButton("Gallery") { _, _ ->
+        takePictureFromGallery()
+      }
+    }
+    builder.show()
+  }
+
+  // Chunk 0
+  private fun loadDayPhotos() {
+    if (photoDirectory.exists()) {
+      val photos = photoDirectory
+        .listFiles { file, _ -> file.isDirectory }
+        .map { Photo(File(it, String.format("%02d_%02d.jpg", month, day))) }
+        .filter { it.file.exists() }
+
+      photosList.adapter = PhotoAdapter(photos)
+    }
+  }
+
+  // Chunk 1
+  private fun dayFile(year: Int, month: Int, day: Int): File {
+    val file = File(photoDirectory, String.format("$year/%02d_%02d.jpg", month, day))
+    file.parentFile.mkdirs()
+    return file
+  }
+
+  // Chunk 2 - FileProvider XML
+
+  // Chunk 3
+  private fun dayUri(year: Int, month: Int, day: Int): Uri {
+    val file = dayFile(year, month, day)
+    val uri = FileProvider.getUriForFile(this, "org.twodee.backlog.fileprovider", file)
+    return uri
+  }
+
+  // Chunk 4
+  private fun takePictureFromCamera() {
+    val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+    intent.resolveActivity(packageManager)?.let {
+      val uri = dayUri(year, month, day)
+      intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+      startActivityForResult(intent, REQUEST_CAMERA)
+    }
+  }
+
+  // Chunk 5
+  private fun takePictureFromGallery() {
+    val intent = Intent(Intent.ACTION_GET_CONTENT)
+    intent.addCategory(Intent.CATEGORY_OPENABLE)
+    intent.type = "image/*"
+    startActivityForResult(intent, REQUEST_GALLERY)
+  }
+
+  // Chunk 6
+  private fun copyUriToUri(from: Uri, to: Uri) {
+    contentResolver.openInputStream(from).use { input ->
+      contentResolver.openOutputStream(to).use { output ->
+        input.copyTo(output)
+      }
+    }
+  }
+
+  // Chunk 7
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    when (requestCode) {
+      REQUEST_CAMERA -> {
+        if (resultCode == Activity.RESULT_OK) {
+          loadDayPhotos()
+        }
+      }
+      REQUEST_GALLERY -> {
+        if (resultCode == Activity.RESULT_OK) {
+          data?.data?.let { uri ->
+            copyUriToUri(uri, dayUri(year, month, day))
+            loadDayPhotos()
+          }
+        }
+      }
+      else -> {
+        super.onActivityResult(requestCode, resultCode, data)
+      }
     }
   }
 

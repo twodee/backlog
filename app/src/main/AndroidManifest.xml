@@ -4,6 +4,10 @@
   package="org.twodee.backlog">
 
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+  <uses-feature
+    android:name="android.hardware.camera"
+    android:required="true" />
 
   <application
     android:allowBackup="true"
@@ -22,7 +26,15 @@
       </intent-filter>
     </receiver>
 
-    <activity android:name=".PictureActivity" />
+    <provider
+      android:name="androidx.core.content.FileProvider"
+      android:authorities="org.twodee.backlog.fileprovider"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/paths"></meta-data>
+    </provider>
 
     <receiver
       android:name=".AlarmReceiver"
