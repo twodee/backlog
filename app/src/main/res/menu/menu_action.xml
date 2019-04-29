@@ -4,6 +4,11 @@
   xmlns:android="http://schemas.android.com/apk/res/android">
 
   <item
+    android:id="@+id/addButton"
+    android:icon="@drawable/camera"
+    android:title="Add"
+    app:showAsAction="always" />
+  <item
     android:id="@+id/remindButton"
     android:title="Schedule reminder"
     app:showAsAction="never" />
