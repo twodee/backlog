@@ -4,6 +4,8 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
+import android.util.Log
 import java.util.*
 
 object Utilities {
@@ -21,6 +23,12 @@ object Utilities {
   fun reminderIntent(context: Context): PendingIntent {
     return Intent(context, AlarmReceiver::class.java).let {
       PendingIntent.getBroadcast(context, 0, it, 0)
+    }
+  }
+
+  fun logExtras(bundle: Bundle) {
+    bundle.keySet().forEach { key ->
+      Log.d("FOO", "$key -> ${bundle[key]}")
     }
   }
 }

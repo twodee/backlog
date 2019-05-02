@@ -9,6 +9,11 @@
     android:title="Add"
     app:showAsAction="always" />
   <item
+    android:id="@+id/speechButton"
+    android:icon="@drawable/microphone"
+    android:title="Voice"
+    app:showAsAction="always" />
+  <item
     android:id="@+id/remindButton"
     android:title="Schedule reminder"
     app:showAsAction="never" />

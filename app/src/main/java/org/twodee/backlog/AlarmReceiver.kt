@@ -6,9 +6,12 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 
 class AlarmReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
+    Log.d("FOO", "GOT THE ALARM")
+
     val intent: PendingIntent = Intent(context, MainActivity::class.java).run {
       this.putExtra("isAdd", true)
 //      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

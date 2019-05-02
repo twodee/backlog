@@ -1,5 +1,6 @@
 package org.twodee.backlog
 
+import android.Manifest
 import android.app.*
 import android.content.ComponentName
 import android.content.Context
@@ -11,6 +12,9 @@ import android.os.Bundle
 import android.os.Environment
 import android.preference.PreferenceManager
 import android.provider.MediaStore
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -24,12 +28,14 @@ import java.util.*
 
 private const val REQUEST_CAMERA = 110
 private const val REQUEST_GALLERY = 111
+private const val REQUEST_SPEECH_RECOGNITION = 112
 
 class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
   private lateinit var prefs: SharedPreferences
   private lateinit var photosList: RecyclerView
   private lateinit var monthSpinner: Spinner
   private lateinit var daySpinner: Spinner
+  private var speechRecognizer: SpeechRecognizer? = null
 
   private val year
     get() = Calendar.getInstance().get(Calendar.YEAR)
@@ -48,6 +54,8 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
     setContentView(R.layout.activity_main)
     createNotificationChannel()
     prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+    intent?.extras?.let { Utilities.logExtras(intent.extras) }
 
     // Set up UI.
     photosList = findViewById(R.id.photosList)
@@ -85,7 +93,7 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
     }
 
     // Fire prompts.
-    val permissions = arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    val permissions = arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.RECORD_AUDIO)
     requestPermissions(permissions, 100, {
       promptForTodo()
     }, {
@@ -129,24 +137,36 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
     daySpinner.adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, days.toTypedArray())
   }
 
+  var openDialogs: MutableList<AlertDialog> = mutableListOf()
+
   private fun promptForTodo() {
     if (intent.getBooleanExtra("isAdd", false)) {
       promptForAdd()
     } else {
       val hour = prefs.getInt("hour", -1)
       if (hour < 0) {
-        val builder = AlertDialog.Builder(this)
-        builder.setTitle("Set Reminder")
-        builder.setMessage("Backlog won't send daily reminders until you schedule a time.")
-        builder.setPositiveButton("Schedule") { _, _ ->
-          setReminderTime()
+        AlertDialog.Builder(this).apply {
+          setTitle("Set Reminder")
+          setMessage("Backlog won't send daily reminders until you schedule a time.")
+          setPositiveButton("Schedule") { _, _ ->
+            setReminderTime()
+          }
+          setNegativeButton("Cancel") { dialog, _ ->
+            dialog.cancel()
+          }
+
+          val dialog = show()
+          setOnDismissListener { openDialogs.remove(dialog) }
+          openDialogs.add(dialog)
         }
-        builder.setNegativeButton("Cancel") { dialog, _ ->
-          dialog.cancel()
-        }
-        builder.show()
       }
     }
+  }
+
+  override fun onStop() {
+    super.onStop()
+    openDialogs.forEach { it.dismiss() }
+    openDialogs.clear()
   }
 
   override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -175,13 +195,61 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
       promptForAdd()
       true
     }
+    R.id.speechButton -> {
+      val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+      }
+      startActivityForResult(intent, REQUEST_SPEECH_RECOGNITION)
+
+      if (speechRecognizer == null) {
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+          putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+          putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+          putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        }
+
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+          setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(p0: Bundle?) {}
+            override fun onRmsChanged(p0: Float) {}
+            override fun onBufferReceived(p0: ByteArray?) {}
+            override fun onPartialResults(p0: Bundle?) {}
+            override fun onEvent(p0: Int, p1: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onEndOfSpeech() {}
+            override fun onError(p0: Int) {}
+
+            override fun onResults(bundle: Bundle?) {
+              bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.forEach {
+                if (it == "next") {
+                  nextDay()
+                } else if (it == "previous") {
+                  previousDay()
+                }
+              }
+              startListening(intent)
+            }
+          })
+          startListening(intent)
+        }
+      } else {
+        speechRecognizer?.stopListening()
+      }
+
+      true
+    }
     else -> {
       super.onOptionsItemSelected(item)
     }
   }
 
   private fun promptForAdd() {
-    val builder = AlertDialog.Builder(this).apply {
+    if (dayFile(year, month, day).exists()) {
+      return
+    }
+
+    AlertDialog.Builder(this).apply {
       setTitle("Choose source")
       setMessage("Where is the photo?")
       setPositiveButton("Camera") { _, _ ->
@@ -190,8 +258,11 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
       setNegativeButton("Gallery") { _, _ ->
         takePictureFromGallery()
       }
+
+      val dialog = show()
+      setOnDismissListener { openDialogs.remove(dialog) }
+      openDialogs.add(dialog)
     }
-    builder.show()
   }
 
   // Chunk 0
@@ -262,6 +333,17 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
           data?.data?.let { uri ->
             copyUriToUri(uri, dayUri(year, month, day))
             loadDayPhotos()
+          }
+        }
+      }
+      REQUEST_SPEECH_RECOGNITION -> {
+        if (resultCode == Activity.RESULT_OK) {
+          data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.forEach {
+            if (it == "next") {
+              nextDay()
+            } else if (it == "previous") {
+              previousDay()
+            }
           }
         }
       }
