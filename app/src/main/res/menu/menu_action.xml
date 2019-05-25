@@ -4,9 +4,14 @@
   xmlns:android="http://schemas.android.com/apk/res/android">
 
   <item
-    android:id="@+id/addButton"
+    android:id="@+id/cameraButton"
     android:icon="@drawable/camera"
-    android:title="Add"
+    android:title="Camera"
+    app:showAsAction="always" />
+  <item
+    android:id="@+id/galleryButton"
+    android:icon="@drawable/gallery"
+    android:title="Gallery"
     app:showAsAction="always" />
   <item
     android:id="@+id/speechButton"

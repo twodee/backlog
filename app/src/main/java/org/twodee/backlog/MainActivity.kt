@@ -134,31 +134,26 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
     }
 
     val days = (1..nDays).map { it.toString() }
-    daySpinner.adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, days.toTypedArray())
+    daySpinner.adapter = ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, days.toTypedArray())
   }
 
   var openDialogs: MutableList<AlertDialog> = mutableListOf()
 
   private fun promptForTodo() {
-    if (intent.getBooleanExtra("isAdd", false)) {
-      promptForAdd()
-    } else {
-      val hour = prefs.getInt("hour", -1)
-      if (hour < 0) {
-        AlertDialog.Builder(this).apply {
-          setTitle("Set Reminder")
-          setMessage("Backlog won't send daily reminders until you schedule a time.")
-          setPositiveButton("Schedule") { _, _ ->
-            setReminderTime()
-          }
-          setNegativeButton("Cancel") { dialog, _ ->
-            dialog.cancel()
-          }
-
-          val dialog = show()
-          setOnDismissListener { openDialogs.remove(dialog) }
-          openDialogs.add(dialog)
+    if (!prefs.contains("hour")) {
+      AlertDialog.Builder(this).apply {
+        setTitle("Set Reminder")
+        setMessage("Backlog won't send daily reminders until you schedule a time.")
+        setPositiveButton("Schedule") { _, _ ->
+          setReminderTime()
         }
+        setNegativeButton("Cancel") { dialog, _ ->
+          dialog.cancel()
+        }
+
+        val dialog = show()
+        setOnDismissListener { openDialogs.remove(dialog) }
+        openDialogs.add(dialog)
       }
     }
   }
@@ -191,8 +186,12 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
       packageManager.setComponentEnabledSetting(receiver, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
       true
     }
-    R.id.addButton -> {
-      promptForAdd()
+    R.id.cameraButton -> {
+      takePictureMaybe { takePictureFromCamera() }
+      true
+    }
+    R.id.galleryButton -> {
+      takePictureMaybe { takePictureFromGallery() }
       true
     }
     R.id.speechButton -> {
@@ -244,24 +243,18 @@ class MainActivity : PermittedActivity(), TimePickerDialog.OnTimeSetListener {
     }
   }
 
-  private fun promptForAdd() {
+  private fun takePictureMaybe(takePicture: () -> Unit) {
     if (dayFile(year, month, day).exists()) {
-      return
-    }
-
-    AlertDialog.Builder(this).apply {
-      setTitle("Choose source")
-      setMessage("Where is the photo?")
-      setPositiveButton("Camera") { _, _ ->
-        takePictureFromCamera()
+      AlertDialog.Builder(this).apply {
+        setMessage("You already have a photo for the current day. Replace it?")
+        setPositiveButton("Replace") { _, _ ->
+          takePicture()
+        }
+        setNegativeButton("Cancel") { _, _ -> }
+        show()
       }
-      setNegativeButton("Gallery") { _, _ ->
-        takePictureFromGallery()
-      }
-
-      val dialog = show()
-      setOnDismissListener { openDialogs.remove(dialog) }
-      openDialogs.add(dialog)
+    } else {
+      takePicture()
     }
   }
 
